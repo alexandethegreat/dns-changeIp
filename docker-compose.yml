@@ -1,0 +1,12 @@
+services:
+  meu-script-java:
+    build: .
+    image: dns:changeIp
+    container_name: dns-changeIP
+    restart: always
+    environment:
+      - APP_EMAIL=
+      - APP_PASSWORD=
+      - APP_API_URL=https://nic.changeip.com/nic/update?hostname=
+      - APP_YOUR_HOST=
+      - APP_TIME_CHECK=10
