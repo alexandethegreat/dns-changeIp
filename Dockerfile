@@ -11,4 +11,4 @@ FROM eclipse-temurin:26-jre-alpine
 WORKDIR /app
 
 COPY --from=build /app/target/*.jar script.jar
-ENTRYPOINT ["java", "-jar", "script.jar"]
+ENTRYPOINT ["java", "-XX:+UseSerialGC", "-Xms16m", "-Xmx32m", "-jar", "script.jar"]

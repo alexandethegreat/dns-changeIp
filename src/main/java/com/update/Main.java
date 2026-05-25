@@ -1,45 +1,34 @@
 package com.update;
-import java.io.IOException;
-import java.util.concurrent.TimeUnit;
+
+
+import com.update.config.AppConfig;
+import com.update.job.DnsMonitorJob;
 
 public class Main {
 
-    static  String EMAIL = System.getenv("APP_EMAIL");
-    static  String PASSWORD = System.getenv("APP_PASSWORD");
-    static  String APP_API_URL =  System.getenv("APP_API_URL");
-    static  String YOUR_HOST = System.getenv("APP_YOUR_HOST");
-    static  byte APP_TIME_CHECK = Byte.parseByte(System.getenv("APP_TIME_CHECK"));
+    public static void main(String[] args) {
+        try {
+            AppConfig appConfig = new AppConfig(
+                    System.getenv("APP_EMAIL"),
+                    System.getenv("APP_PASSWORD"),
+                    System.getenv("APP_API_URL"),
+                    System.getenv("APP_YOUR_HOST"),
+                    Byte.parseByte(System.getenv("APP_TIME_CHECK"))
+            );
 
+            DnsMonitorJob dnsMonitorJob = new DnsMonitorJob(appConfig);
 
-    void main(String[] args) throws InterruptedException, IOException {
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                System.out.println("\nPreparando para desligar...");
+                dnsMonitorJob.stopMonitor();
+            }));
 
-        if (
-                        EMAIL == null || EMAIL.isBlank() ||
-                        PASSWORD == null || PASSWORD.isBlank() ||
-                        APP_API_URL == null || APP_API_URL.isBlank() ||
-                        YOUR_HOST == null || YOUR_HOST.isBlank() ||
-                        APP_TIME_CHECK <= 0
-        ) {
-            System.err.println("Erro: Variáveis inválidas.");
+            System.out.println("Serviço iniciado com sucesso.");
+            dnsMonitorJob.startMonitor();
+
+        } catch (Exception e) {
+            System.err.println("Erro crítico ao iniciar a aplicação: " + e.getMessage());
             System.exit(1);
         }
-
-
-        System.out.println("Script iniciado para o usuário com o email : " + EMAIL);
-
-        while (true) {
-            try {
-                UpdateIp.UpdateIp(EMAIL, PASSWORD, APP_API_URL, YOUR_HOST);
-
-            } catch (Exception e) {
-                System.err.println("Erro na execução: " + e.getCause().getMessage());
-            }
-            TimeUnit.MINUTES.sleep(APP_TIME_CHECK);
-        }
-
-
-
-
     }
-
 }

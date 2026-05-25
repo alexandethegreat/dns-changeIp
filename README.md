@@ -1,165 +1,101 @@
-# Documentação — DNS Change IP
+# DNS Change IP (Daemon Automático)
 
 ## Visão Geral
 
-O projeto **DNS Change IP** é um script Java executado em Docker responsável por atualizar automaticamente o IP de um host DNS dinâmico utilizando a API do ChangeIP.
+O **DNS Change IP** é um *daemon* (serviço em background) desenvolvido em Java 26, projetado para rodar em contêineres Docker.
 
-O sistema:
+Sua responsabilidade é monitorar e manter atualizado o apontamento de um IP dinâmico junto à plataforma ChangeIP.
 
-1. Obtém o IP atual configurado no DNS.
-2. Obtém o IP público atual da máquina.
-3. Compara os dois IPs.
-4. Caso sejam diferentes, envia uma requisição para atualizar o DNS automaticamente.
+O sistema opera de forma autônoma e otimizada:
+
+1. Consulta o IP público atual da rede via `ipify.org`
+2. Verifica internamente se o IP mudou desde a última checagem
+3. Executa a atualização HTTP apenas quando necessário
+4. Suporta *Graceful Shutdown* ao receber sinais do Docker
+
+---
+
+# Como Funciona
+
+O núcleo da aplicação está no `DnsMonitorJob`, responsável por um loop contínuo de verificação baseado no valor configurado em `APP_TIME_CHECK`.
+
+## Primeira Execução
+
+Quando o contêiner inicia, o estado do último IP conhecido (`lastKnowIP`) começa vazio.
+
+Por isso, na primeira execução do loop, a aplicação força uma atualização do DNS para garantir sincronização total entre o host configurado e o IP público atual.
+
+Após essa sincronização inicial, novas requisições só serão realizadas caso o IP realmente mude.
 
 ---
 
 # Estrutura do Projeto
-
 ```text
 Dns-ChangeIP/
-│
-├── src/
-│   └── main/
-│       └── java/
-│           └── com.update/
-│               ├── Main.java
-│               └── UpdateIp.java
+├── src/main/java/com/update/
+│   ├── config/
+│   │   └── AppConfig.java
+│   │
+│   ├── infra/
+│   │   ├── client/
+│   │   │   └── ChangeIpClient.java
+│   │   │
+│   │   └── network/
+│   │       └── GetPublicIp.java
+│   │
+│   ├── job/
+│   │   └── DnsMonitorJob.java
+│   │
+│   └── Main.java
 │
 ├── Dockerfile
 ├── docker-compose.yml
-├── pom.xml
-└── README.md
+└── pom.xml
 ```
+
+---
+
+# Responsabilidade dos Componentes
+
+| Arquivo | Responsabilidade |
+|---|---|
+| `AppConfig.java` | Validação das variáveis de ambiente |
+| `ChangeIpClient.java` | Comunicação com a API ChangeIP |
+| `GetPublicIp.java` | Consulta do IP público |
+| `DnsMonitorJob.java` | Monitoramento e atualização do DNS |
+| `Main.java` | Inicialização e Shutdown Hook |
 
 ---
 
 # Tecnologias Utilizadas
 
-* Java 26
-* Maven
-* Docker
-* Docker Compose
-* ChangeIP Dynamic DNS API
+- **Java 26**
+   - Records
+   - `HttpClient` nativo
+- **Maven 3.9**
+- **Docker**
+- **Docker Compose**
+- **Alpine Linux**
 
 ---
 
-# Funcionamento
+# Variáveis de Ambiente
 
-O script executa continuamente em loop.
+Toda configuração é feita via variáveis de ambiente no próprio `docker-compose.yml`.
 
-A cada intervalo configurado:
-
-1. Resolve o IP do host DNS.
-2. Consulta o IP público da máquina usando:
-
-   ```text
-   https://api.ipify.org
-   ```
-3. Compara os valores.
-4. Se o IP mudou:
-
-    * envia atualização para:
-
-   ```text
-   https://nic.changeip.com/nic/update
-   ```
+| Variável | Tipo | Descrição | Exemplo |
+|---|---|---|---|
+| `APP_EMAIL` | String | Email da conta ChangeIP | `admin@exemplo.com` |
+| `APP_PASSWORD` | String | Senha da conta | `senha123` |
+| `APP_API_URL` | String | Endpoint da API | `https://nic.changeip.com/nic/update?hostname=` |
+| `APP_YOUR_HOST` | String | Host/FQDN dinâmico | `teste.host.com` |
+| `APP_TIME_CHECK` | Byte | Intervalo de checagem em minutos | `10` |
 
 ---
 
-# Classes
+# Deploy e Execução
 
-## Classe `Main`
-
-Responsável por:
-
-* Ler variáveis de ambiente
-* Validar configurações
-* Iniciar o loop principal
-* Executar verificações periódicas
-
-### Variáveis de Ambiente
-
-| Variável         | Descrição                    |
-| ---------------- | ---------------------------- |
-| `APP_EMAIL`      | Email da conta ChangeIP      |
-| `APP_PASSWORD`   | Senha da conta               |
-| `APP_API_URL`    | URL da API do ChangeIP       |
-| `APP_YOUR_HOST`  | Host DNS que será atualizado |
-| `APP_TIME_CHECK` | Intervalo em minutos         |
-
----
-
-## Classe `UpdateIp`
-
-Responsável por:
-
-* Buscar IP DNS atual
-* Buscar IP público
-* Comparar IPs
-* Atualizar DNS quando necessário
-
-### Fluxo da Classe
-
-```text
-1. Busca IP do host DNS
-2. Busca IP público
-3. Compara os IPs
-4. Se diferente:
-      envia atualização
-5. Exibe logs no console
-```
-
----
-
-# Docker
-
-## Dockerfile
-
-O projeto utiliza build multi-stage:
-
-### Etapa 1 — Build
-
-Compila o projeto usando Maven.
-
-```dockerfile
-FROM maven:3.9-eclipse-temurin-26-alpine AS build
-```
-
-### Etapa 2 — Runtime
-
-Executa apenas o `.jar` final em uma imagem leve.
-
-```dockerfile
-FROM eclipse-temurin:26-jre-alpine
-```
-
----
-
-# Docker Compose
-
-## Configuração
-
-```yaml
-services:
-  meu-script-java:
-    build: .
-    image: dns:changeIp
-    container_name: dns-changeIP
-    restart: always
-
-    environment:
-      - APP_EMAIL=
-      - APP_PASSWORD=
-      - APP_API_URL=https://nic.changeip.com/nic/update?hostname=
-      - APP_YOUR_HOST=
-      - APP_TIME_CHECK=10
-```
-
----
-
-# Como Executar
-
-## 1. Clonar Projeto
+## 1. Clonar o Projeto
 
 ```bash
 git clone <repositorio>
@@ -168,128 +104,107 @@ cd Dns-ChangeIP
 
 ---
 
-## 2. Configurar Variáveis
+## 2. Configurar o `docker-compose.yml`
 
-Editar o arquivo `docker-compose.yml`:
+Exemplo:
 
 ```yaml
-environment:
-  - APP_EMAIL=seuemail@email.com
-  - APP_PASSWORD=suasenha
-  - APP_API_URL=https://nic.changeip.com/nic/update?hostname=
-  - APP_YOUR_HOST=seudominio.ddns.net
-  - APP_TIME_CHECK=10
+    environment:
+      APP_EMAIL: seuemail@gmail.com
+      APP_PASSWORD: suasenha
+      APP_API_URL: https://nic.changeip.com/nic/update?hostname=
+      APP_YOUR_HOST: teste.host.com
+      APP_TIME_CHECK: 10
 ```
 
 ---
 
-## 3. Build do Container
+## 3. Build e Inicialização
 
 ```bash
-docker compose build
+docker compose up -d --build
 ```
 
 ---
 
-## 4. Iniciar Aplicação
-
-```bash
-docker compose up -d
-```
-
----
-
-## 5. Ver Logs
+## 4. Monitoramento de Logs
 
 ```bash
 docker logs -f dns-changeIP
 ```
 
----
-
-# Logs Esperados
-
-## Quando o IP não mudou
+### Exemplo esperado
 
 ```text
-Entering UpdateIp
-IP Public Response: 192.168.0.1
-O ip não mudou
+Serviço iniciado com sucesso.
+Tentando atualizar host: teste.host.com
+Iniciando processo de verificação e atualização
+IP atualizado com sucesso
 ```
 
 ---
 
-## Quando o IP é atualizado
+## 5. Encerrar Serviço
+
+```bash
+docker compose down
+```
+
+A aplicação executará *Graceful Shutdown* antes do encerramento completo.
+
+---
+
+# Otimizações Aplicadas
+
+## Serial Garbage Collector
+
+O Dockerfile utiliza:
 
 ```text
-Entering UpdateIp
-IP Public Response: 192.168.0.2
-BODY: Successful Update
+-XX:+UseSerialGC -Xms16m -Xmx32m
 ```
+
+Isso reduz significativamente o consumo de RAM da JVM em cenários de baixo throughput.
+
+---
+
+# Graceful Shutdown
+
+A aplicação utiliza:
+
+```java
+Runtime.getRuntime().addShutdownHook(...)
+```
+
+Isso permite que o Docker aguarde a conclusão da operação atual antes de finalizar a JVM.
+
+Benefícios:
+
+- Evita encerramento abrupto
+- Finaliza requisições HTTP corretamente
+- Mantém o desligamento seguro
 
 ---
 
 # Segurança
 
-## Recomendações
-
-* Nunca commitar credenciais no GitHub.
-* Utilize `.env` para variáveis sensíveis.
-* Utilize tokens ou autenticação mais segura quando possível.
-
----
-
-# Melhorias Futuras
-
-* Adicionar logs estruturados
-* Implementar retry automático
-* Adicionar suporte para múltiplos hosts
-* Adicionar monitoramento
-* Criar healthcheck Docker
-* Adicionar testes unitários
-* Implementar cache do último IP
-* Suporte IPv6
-
----
-
-# Exemplo com `.env`
-
-## Arquivo `.env`
-
-```env
-APP_EMAIL=seuemail@email.com
-APP_PASSWORD=suasenha
-APP_API_URL=https://nic.changeip.com/nic/update?hostname=
-APP_YOUR_HOST=seudominio.ddns.net
-APP_TIME_CHECK=10
-```
-
-## docker-compose.yml
-
-```yaml
-services:
-  meu-script-java:
-    build: .
-    image: dns:changeIp
-    container_name: dns-changeIP
-    restart: always
-    env_file:
-      - .env
-```
+- Nunca envie credenciais para o GitHub
+- Restrinja permissões do contêiner
+- Utilize senhas fortes
+- Evite expor portas desnecessárias
 
 ---
 
 # Possíveis Problemas
 
-| Problema                    | Causa                      |
-| --------------------------- | -------------------------- |
-| `Erro: Variáveis inválidas` | Variáveis não configuradas |
-| `UnknownHostException`      | Host inválido              |
-| `401 Unauthorized`          | Credenciais incorretas     |
-| `Connection timed out`      | Problema de rede           |
+| Problema | Causa Comum | Solução |
+|---|---|---|
+| `UnknownHostException` | DNS inválido ou sem internet | Verificar conectividade |
+| `401 Unauthorized` | Credenciais incorretas | Validar email e senha |
+| `Connection timed out` | Timeout de rede | Verificar firewall ou internet |
 
 ---
 
 # Licença
 
-Projeto para automação de atualização DNS dinâmico utilizando Java + Docker.
+Projeto para automação de atualização de DNS dinâmico utilizando Java + Docker.
